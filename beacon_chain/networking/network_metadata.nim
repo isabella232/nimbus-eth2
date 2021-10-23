@@ -243,8 +243,10 @@ when not defined(gnosisChainBinary):
       mainnetMetadata* = eth2Network("shared/mainnet", mainnet)
       praterMetadata* = eth2Network("shared/prater", goerli)
       ropstenMetadata = mergeTestnet("ropsten-beacon-chain", ropsten)
+      kilnMetadata* = mergeNetwork("kiln")
     static:
-      for network in [mainnetMetadata, praterMetadata, ropstenMetadata]:
+      for network in [
+          mainnetMetadata, praterMetadata, ropstenMetadata, kilnMetadata]:
         checkForkConsistency(network.cfg)
 
   proc getMetadataForNetwork*(networkName: string): Eth2NetworkMetadata {.raises: [Defect, IOError].} =
@@ -268,6 +270,8 @@ when not defined(gnosisChainBinary):
           praterMetadata
         of "ropsten":
           ropstenMetadata
+        of "kiln":
+          kilnMetadata
         else:
           loadRuntimeMetadata()
       else:
