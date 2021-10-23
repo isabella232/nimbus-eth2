@@ -21,8 +21,8 @@ import
   chronicles, chronicles/timings,
   json_serialization/std/[options, sets, net], serialization/errors,
   eth/db/kvstore,
-  eth/keys, eth/p2p/discoveryv5/[protocol, enr],
-  web3/ethtypes,
+  eth/[async_utils, keys], eth/p2p/discoveryv5/[protocol, enr],
+  web3/[engine_api, ethtypes],
 
   # Local modules
   ../spec/datatypes/[phase0, altair, bellatrix],
@@ -479,11 +479,16 @@ proc getExecutionPayload(node: BeaconNode, proposalState: auto):
           node.config.suggestedFeeRecipient.get
         else:
           default(Eth1Address)
+      terminalBlockHash =
+        if node.eth1Monitor.terminalBlockHash.isSome:
+          node.eth1Monitor.terminalBlockHash.get.asEth2Digest
+        else:
+          default(Eth2Digest)
       latestHead =
         if not node.dag.head.executionBlockRoot.isZero:
           node.dag.head.executionBlockRoot
         else:
-          default(Eth2Digest)
+          terminalBlockHash
       latestFinalized = node.dag.finalizedHead.blck.executionBlockRoot
       payload_id = (await forkchoice_updated(
         proposalState.bellatrixData.data, latestHead, latestFinalized,

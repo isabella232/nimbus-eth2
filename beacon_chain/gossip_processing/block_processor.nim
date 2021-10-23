@@ -453,8 +453,57 @@ proc runQueueProcessingLoop*(self: ref BlockProcessor) {.async.} =
         blck.resfut.complete(Result[void, BlockError].err(BlockError.Invalid))
       continue
 
-    if  executionPayloadStatus in
-          [PayloadExecutionStatus.accepted, PayloadExecutionStatus.syncing] and
+    template preferDAGHead(): bool =
+      # A mini-fork choice heuristic. Allow the DAG head to be somewhat behind,
+      # because it won't take long to run directly. This shouldn't typically be
+      # important, as the optimistic sync spec has similar accomodations, for a
+      # fork choice poisoning attack mitigation, but this allows Nimbus to pick
+      # its verified chain separately.
+      const VERIFIED_HEAD_PREFERENCE_SLOTS = 256
+      self.consensusManager.dag.head.slot + VERIFIED_HEAD_PREFERENCE_SLOTS >=
+        optForkchoiceHeadSlot
+
+    # optSync blocks should always be of Bellatrix or newer forks.
+    doAssert blck.src != MsgSource.optSync or hasExecutionPayload
+
+    if blck.src == MsgSource.optSync:
+      # Already run newPayload; just run forkchoiceUpdated and move on
+      let
+        headBlockRoot =
+          blck.blck.bellatrixData.message.body.execution_payload.block_hash
+        finalizedBlockRoot =
+          if not self.consensusManager.dag.finalizedHead.blck.executionBlockRoot.isZero:
+            self.consensusManager.dag.finalizedHead.blck.executionBlockRoot
+          else:
+            default(Eth2Digest)
+
+      # These are best-plausible guesses to help the EL sync. This sync
+      # manager should be always moving forward but in case that is not
+      # true, enforce that ordering here.
+      if blck.blck.slot > optForkchoiceHeadSlot:
+        optForkchoiceHeadSlot = blck.blck.slot
+        optForkchoiceHeadRoot =
+          blck.blck.bellatrixData.message.body.execution_payload.block_hash
+
+      debug "runQueueProcessingLoop: executed optimistic sync block",
+        blck = shortLog(blck.blck),
+        headBlockRoot,
+        optForkchoiceHeadSlot,
+        optForkchoiceHeadRoot,
+        dagheadslot = self.consensusManager.dag.head.slot,
+        preferDAGHead = preferDAGHead()
+
+      # Should not reach this block if optimistic sync has been overtaken by
+      # verified heads. Thus, in a kind of simplified fork choice, don't run
+      # fcU for optimistic sync if DAG head's close enough.
+      if not preferDAGHead():
+        await self.runForkchoiceUpdated(headBlockRoot, finalizedBlockRoot)
+      blck.resfut.complete(Result[void, BlockError].ok())
+      continue
+
+    doAssert blck.src != MsgSource.optSync
+
+    if  executionPayloadStatus == PayloadExecutionStatus.accepted and
         hasExecutionPayload:
       # The EL client doesn't know here whether the payload is valid, because,
       # for example, in Geth's case, its parent isn't known. When Geth logs an
@@ -508,5 +557,8 @@ proc runQueueProcessingLoop*(self: ref BlockProcessor) {.async.} =
     if  executionPayloadStatus == PayloadExecutionStatus.valid and
         hasExecutionPayload:
       await self.runForkchoiceUpdated(
-        self.consensusManager.dag.head.executionBlockRoot,
+        if preferDAGHead():
+          self.consensusManager.dag.head.executionBlockRoot
+        else:
+          optForkchoiceHeadRoot,
         self.consensusManager.dag.finalizedHead.blck.executionBlockRoot)

@@ -245,6 +245,28 @@ proc initFullNode(
   func getFrontfillSlot(): Slot =
     dag.frontfill.slot
 
+  # https://github.com/ethereum/consensus-specs/blob/v1.1.9/sync/optimistic.md#constants
+  # TODO use config settin
+  const
+    SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY = 128
+    OPTIMISTIC_SYNC_WINDOW_SLOTS = 64
+
+  proc getOptimisticStartSlot(): Slot =
+    const SLOT_OFFSET =
+      SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY + OPTIMISTIC_SYNC_WINDOW_SLOTS
+    let localWallSlot = getLocalWallSlot()
+    if localWallSlot >= SLOT_OFFSET:
+      localWallSlot - SLOT_OFFSET
+    else:
+      0.Slot
+
+  proc getOptimisticEndSlot(): Slot =
+    let localWallSlot = getLocalWallSlot()
+    if localWallSlot >= SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY:
+      localWallSlot - SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY
+    else:
+      0.Slot
+
   let
     quarantine = newClone(
       Quarantine.init())
@@ -268,6 +290,14 @@ proc initFullNode(
       let resfut = newFuture[Result[void, BlockError]]("blockVerifier")
       blockProcessor[].addBlock(MsgSource.gossip, signedBlock, resfut)
       resfut
+    optimisticBlockVerifier = proc(signedBlock: ForkedSignedBeaconBlock):
+        Future[Result[void, BlockError]] =
+      let resfut = newFuture[Result[void, BlockError]]("optimisticBlockVerifier")
+      if signedBlock.kind >= BeaconBlockFork.Bellatrix:
+        blockProcessor[].addBlock(MsgSource.optSync, signedBlock, resfut)
+      else:
+        resfut.complete(Result[void, BlockError].ok())
+      resfut
     processor = Eth2Processor.new(
       config.doppelgangerDetection,
       blockProcessor, node.validatorMonitor, dag, attestationPool, exitPool,
@@ -281,6 +311,11 @@ proc initFullNode(
       node.network.peerPool, SyncQueueKind.Backward, getLocalHeadSlot,
       getLocalWallSlot, getFirstSlotAtFinalizedEpoch, getBackfillSlot,
       getFrontfillSlot, dag.backfill.slot, blockVerifier, maxHeadAge = 0)
+    optimisticSyncManager = newSyncManager[Peer, PeerID](
+      node.network.peerPool, SyncQueueKind.Forward, getOptimisticStartSlot,
+      getOptimisticEndSlot,
+      getOptimisticStartSlot, # match with head slot, because going back pointless
+      getBackfillSlot, getFrontfillSlot, dag.tail.slot, optimisticBlockVerifier)
 
   dag.setFinalizationCb makeOnFinalizationCb(node.eventBus, node.eth1Monitor)
 
@@ -295,6 +330,7 @@ proc initFullNode(
   node.requestManager = RequestManager.init(node.network, blockVerifier)
   node.syncManager = syncManager
   node.backfiller = backfiller
+  node.optimisticSyncManager = optimisticSyncManager
 
   debug "Loading validators", validatorsDir = config.validatorsDir()
 
@@ -417,6 +453,21 @@ proc init*(T: type BeaconNode,
     else:
       none(seq[byte])
 
+  # Better to find out at startup
+  if config.suggestedFeeRecipient.isSome:
+    try:
+      discard Eth1Address.fromHex(config.suggestedFeeRecipient.get)
+    except ValueError as exc:
+      fatal "Specified an invalid suggested fee recipient",
+        msg = exc.msg
+      quit 1
+  else:
+    # TODO should warn on this not being configured but not useful yet to do so
+    # and there will be other ways of specifying these so it's premature to use
+    # any particular design yet for this part.
+    #warn "No suggested fee recipient provided; use --suggested-fee-recipient"
+    discard
+
   template getDepositContractSnapshot: auto =
     if depositContractSnapshot.isSome:
       depositContractSnapshot
@@ -427,7 +478,7 @@ proc init*(T: type BeaconNode,
         config.web3Urls[0],
         optJwtSecret)
       if snapshotRes.isErr:
-        fatal "Failed to locate the deposit contract deployment block",
+        fatal "Failed to locate the deposit contract deployment block; ensure execution layer client is running and accessible via --web3-url",
               depositContract = cfg.DEPOSIT_CONTRACT_ADDRESS,
               deploymentBlock = $depositContractDeployedAt
         quit 1
@@ -1460,6 +1511,7 @@ proc run(node: BeaconNode) {.raises: [Defect, CatchableError].} =
 
   node.requestManager.start()
   node.syncManager.start()
+  node.optimisticSyncManager.start()
 
   if node.dag.needsBackfill(): asyncSpawn node.startBackfillTask()
 
