@@ -375,22 +375,29 @@ template getForkedBlockField*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBe
   of BeaconBlockFork.Altair:    unsafeAddr x.altairData.message.y
   of BeaconBlockFork.Bellatrix: unsafeAddr x.bellatrixData.message.y)[]
 
-template signature*(x: ForkedSignedBeaconBlock): ValidatorSig =
+template getForkedBodyField*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock, y: untyped): untyped =
+  # unsafeAddr avoids a copy of the field in some cases
+  (case x.kind
+  of BeaconBlockFork.Phase0:    unsafeAddr x.phase0Data.message.body.y
+  of BeaconBlockFork.Altair:    unsafeAddr x.altairData.message.body.y
+  of BeaconBlockFork.Bellatrix: unsafeAddr x.bellatrixData.message.body.y)[]
+
+func signature*(x: ForkedSignedBeaconBlock): ValidatorSig =
   withBlck(x): blck.signature
 
-template signature*(x: ForkedTrustedSignedBeaconBlock): TrustedSig =
+func signature*(x: ForkedTrustedSignedBeaconBlock): TrustedSig =
   withBlck(x): blck.signature
 
-template root*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock): Eth2Digest =
+func root*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock): Eth2Digest =
   withBlck(x): blck.root
 
-template slot*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock): Slot =
+func slot*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock): Slot =
   withBlck(x): blck.message.slot
 
-template shortLog*(x: ForkedBeaconBlock): auto =
+func shortLog*(x: ForkedBeaconBlock): auto =
   withBlck(x): shortLog(blck)
 
-template shortLog*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock): auto =
+func shortLog*(x: ForkedSignedBeaconBlock | ForkedTrustedSignedBeaconBlock): auto =
   withBlck(x): shortLog(blck)
 
 chronicles.formatIt ForkedBeaconBlock: it.shortLog
