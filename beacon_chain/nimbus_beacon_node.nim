@@ -293,7 +293,9 @@ proc initFullNode(
     optimisticBlockVerifier = proc(signedBlock: ForkedSignedBeaconBlock):
         Future[Result[void, BlockError]] =
       let resfut = newFuture[Result[void, BlockError]]("optimisticBlockVerifier")
-      if signedBlock.kind >= BeaconBlockFork.Bellatrix:
+      if  dag.headState.kind >= BeaconStateFork.Bellatrix and
+          is_merge_transition_complete(dag.headState.bellatrixData.data) and
+          signedBlock.kind >= BeaconBlockFork.Bellatrix:
         blockProcessor[].addBlock(MsgSource.optSync, signedBlock, resfut)
       else:
         resfut.complete(Result[void, BlockError].ok())
