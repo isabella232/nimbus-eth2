@@ -559,8 +559,7 @@ proc makeBeaconBlockForHeadAndSlot*(node: BeaconNode,
       else:
         node.syncCommitteeMsgPool[].produceSyncAggregate(head.root),
       if  slot.epoch < node.dag.cfg.BELLATRIX_FORK_EPOCH or
-          # TODO when Eth1Monitor TTD following comes in, actually detect
-          # transition block directly
+          # TODO use TTD
           not is_merge_transition_complete(proposalState.bellatrixData.data):
         default(bellatrix.ExecutionPayload)
       else:
