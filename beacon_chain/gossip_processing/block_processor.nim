@@ -513,7 +513,8 @@ proc runQueueProcessingLoop*(self: ref BlockProcessor) {.async.} =
 
     doAssert blck.src != MsgSource.optSync
 
-    if  executionPayloadStatus == PayloadExecutionStatus.accepted and
+    if  executionPayloadStatus in
+          [PayloadExecutionStatus.accepted, PayloadExecutionStatus.syncing] and
         hasExecutionPayload:
       # The EL client doesn't know here whether the payload is valid, because,
       # for example, in Geth's case, its parent isn't known. When Geth logs an
