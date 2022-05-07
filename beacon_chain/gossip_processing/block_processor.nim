@@ -568,7 +568,8 @@ proc runQueueProcessingLoop*(self: ref BlockProcessor) {.async.} =
     if  executionPayloadStatus == PayloadExecutionStatus.valid and
         hasExecutionPayload:
       await self.runForkchoiceUpdated(
-        if preferDAGHead():
+        # TODO using optimistic head can get stuck for a while
+        if true or preferDAGHead():
           self.consensusManager.dag.head.executionBlockRoot
         else:
           optForkchoiceHeadRoot,
