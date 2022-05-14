@@ -37,7 +37,8 @@ import
   ../sszdump, ../sync/sync_manager,
   ../gossip_processing/[block_processor, consensus_manager],
   ".."/[conf, beacon_clock, beacon_node, version],
-  "."/[slashing_protection, validator_pool, keystore_management]
+  "."/[slashing_protection, validator_pool, keystore_management],
+  ".."/spec/mev/rest_bellatrix_mev_calls
 
 from eth/async_utils import awaitWithTimeout
 from web3/engine_api import ForkchoiceUpdatedResponse
@@ -152,13 +153,13 @@ proc addValidators*(node: BeaconNode) =
   node.addLocalValidators(localValidators)
   node.addRemoteValidators(remoteValidators)
 
-proc getAttachedValidator*(node: BeaconNode,
-                           pubkey: ValidatorPubKey): AttachedValidator =
+proc getAttachedValidator(node: BeaconNode,
+                          pubkey: ValidatorPubKey): AttachedValidator =
   node.attachedValidators[].getValidator(pubkey)
 
-proc getAttachedValidator*(node: BeaconNode,
-                           state_validators: auto,
-                           idx: ValidatorIndex): AttachedValidator =
+proc getAttachedValidator(node: BeaconNode,
+                          state_validators: auto,
+                          idx: ValidatorIndex): AttachedValidator =
   if uint64(idx) < state_validators.lenu64:
     let validator = node.getAttachedValidator(state_validators[idx].pubkey)
     if validator != nil and validator.index != some(idx):
@@ -171,9 +172,9 @@ proc getAttachedValidator*(node: BeaconNode,
       idx, validators = state_validators.len
     nil
 
-proc getAttachedValidator*(node: BeaconNode,
-                           epochRef: EpochRef,
-                           idx: ValidatorIndex): AttachedValidator =
+proc getAttachedValidator(node: BeaconNode,
+                          epochRef: EpochRef,
+                          idx: ValidatorIndex): AttachedValidator =
   let key = epochRef.validatorKey(idx)
   if key.isSome():
     let validator = node.getAttachedValidator(key.get().toPubKey())
@@ -511,9 +512,18 @@ proc get_execution_payload(
     asConsensusExecutionPayload(
       await execution_engine.getPayload(payload_id.get))
 
-proc getExecutionPayload(node: BeaconNode, proposalState: auto):
+proc getExecutionPayload(
+    node: BeaconNode, proposalState: auto, slot: Slot, head: BlockRef,
+    pubkey: ValidatorPubKey):
     Future[ExecutionPayload] {.async.} =
   # https://github.com/ethereum/consensus-specs/blob/v1.1.10/specs/bellatrix/validator.md#executionpayload
+
+  if true:
+    # MEV here
+    let foo = node.restClient.getHeader(slot, head.bid.root, pubkey)
+    # TODO sign blinded block
+    var foo2: SignedBlindedBeaconBlock
+    let foo3 = node.restClient.submitBlindedBlock(foo2)
 
   # Only current hardfork with execution payloads is Bellatrix
   static: doAssert high(BeaconStateFork) == BeaconStateFork.Bellatrix
@@ -573,7 +583,8 @@ proc makeBeaconBlockForHeadAndSlot*(node: BeaconNode,
                                     randao_reveal: ValidatorSig,
                                     validator_index: ValidatorIndex,
                                     graffiti: GraffitiBytes,
-                                    head: BlockRef, slot: Slot
+                                    head: BlockRef, slot: Slot,
+                                    pubkey: ValidatorPubKey
                                    ): Future[ForkedBlockResult] {.async.} =
   # Advance state to the slot that we're proposing for
   let
@@ -623,7 +634,8 @@ proc makeBeaconBlockForHeadAndSlot*(node: BeaconNode,
           not is_merge_transition_complete(proposalState.bellatrixData.data):
         default(bellatrix.ExecutionPayload)
       else:
-        (await getExecutionPayload(node, proposalState)),
+        doAssert pubkey == node.dag.validatorKey(validator_index).get()
+        (await getExecutionPayload(node, proposalState, slot, head, pubkey)),
       noRollback, # Temporary state - no need for rollback
       cache)
     if res.isErr():
@@ -668,7 +680,7 @@ proc proposeBlock(node: BeaconNode,
         res.get()
 
   var newBlock = await makeBeaconBlockForHeadAndSlot(
-    node, randao, validator_index, node.graffitiBytes, head, slot)
+    node, randao, validator_index, node.graffitiBytes, head, slot, validator.pubkey)
 
   if newBlock.isErr():
     return head # already logged elsewhere!
