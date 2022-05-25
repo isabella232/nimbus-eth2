@@ -234,13 +234,16 @@ template mergeTestnet(path: string, eth1Network: Eth1Network): Eth2NetworkMetada
   loadCompileTimeNetworkMetadata(mergeTestnetsDir & "/" & path,
                                  some eth1Network)
 
+template mergeKiln(path: string): Eth2NetworkMetadata =
+  loadCompileTimeNetworkMetadata(mergeTestnetsDir & "/" & path)
+
 when not defined(gnosisChainBinary):
   when const_preset == "mainnet":
     const
       mainnetMetadata* = eth2Network("shared/mainnet", mainnet)
       praterMetadata* = eth2Network("shared/prater", goerli)
       ropstenMetadata = mergeTestnet("ropsten-beacon-chain", ropsten)
-      kilnMetadata* = mergeNetwork("kiln")
+      kilnMetadata* = mergeKiln("kiln")
 
   proc getMetadataForNetwork*(networkName: string): Eth2NetworkMetadata {.raises: [Defect, IOError].} =
     template loadRuntimeMetadata: auto =
