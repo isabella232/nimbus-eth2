@@ -185,12 +185,6 @@ type
 
     cfg*: RuntimeConfig
 
-    lightClientDataServe*: bool
-      ## Whether to make local light client data available or not
-
-    lightClientDataImportMode*: LightClientDataImportMode
-      ## Which classes of light client data to import
-
     epochRefs*: array[32, EpochRef]
       ## Cached information about a particular epoch ending with the given
       ## block - we limit the number of held EpochRefs to put a cap on
@@ -209,9 +203,10 @@ type
       ## called several times.
 
     # -----------------------------------
-    # Data to enable light clients to stay in sync with the network
+    # Light client data
 
-    lightClientCache*: LightClientCache
+    lcDataCollector*: LightClientDataCollector
+      # Collects data to enable light clients to sync with the network
 
     # -----------------------------------
     # Callbacks
@@ -224,10 +219,6 @@ type
       ## On beacon chain reorganization
     onFinHappened*: OnFinalizedCallback
       ## On finalization callback
-    onLightClientFinalityUpdate*: OnLightClientFinalityUpdateCallback
-      ## On new `LightClientFinalityUpdate` callback
-    onLightClientOptimisticUpdate*: OnLightClientOptimisticUpdateCallback
-      ## On new `LightClientOptimisticUpdate` callback
 
     headSyncCommittees*: SyncCommitteeCache
       ## A cache of the sync committees, as they appear in the head state -
@@ -324,8 +315,13 @@ func shortLog*(v: EpochKey): string =
   # epoch:root when logging epoch, root:slot when logging slot!
   $v.epoch & ":" & shortLog(v.bid)
 
-template setFinalizationCb*(dag: ChainDAGRef, cb: OnFinalizedCallback) =
+template setFinalizationCb*(
+    dag: ChainDAGRef, cb: OnFinalizedCallback) =
   dag.onFinHappened = cb
+
+template setLightClientImportTaskAllowedCb*(
+    dag: ChainDAGRef, cb: LightClientTaskAllowedCallback) =
+  dag.lcDataCollector.importTaskAllowed = cb
 
 func shortLog*(v: EpochRef): string =
   # epoch:root when logging epoch, root:slot when logging slot!

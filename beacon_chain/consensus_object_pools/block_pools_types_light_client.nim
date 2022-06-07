@@ -13,16 +13,12 @@
 import
   # Status libraries
   stew/bitops2,
+  chronos,
   # Beacon chain internals
   ../spec/datatypes/altair,
   ./block_dag
 
 type
-  OnLightClientFinalityUpdateCallback* =
-    proc(data: altair.LightClientFinalityUpdate) {.gcsafe, raises: [Defect].}
-  OnLightClientOptimisticUpdateCallback* =
-    proc(data: altair.LightClientOptimisticUpdate) {.gcsafe, raises: [Defect].}
-
   LightClientDataImportMode* {.pure.} = enum
     ## Controls which classes of light client data are imported.
     None = "none"
@@ -30,9 +26,14 @@ type
     OnlyNew = "only-new"
       ## Import only new light client data.
     Full = "full"
-      ## Import light client data for entire weak subjectivity period.
-    OnDemand = "on-demand"
-      ## Don't precompute historic data. Slow, may miss validator duties.
+      ## Import all light client data, backfilling historic data.
+
+  OnLightClientFinalityUpdateCallback* =
+    proc(data: altair.LightClientFinalityUpdate) {.gcsafe, raises: [Defect].}
+  OnLightClientOptimisticUpdateCallback* =
+    proc(data: altair.LightClientOptimisticUpdate) {.gcsafe, raises: [Defect].}
+
+  LightClientTaskAllowedCallback* = proc(): bool {.gcsafe, raises: [Defect].}
 
   CachedLightClientData* = object
     ## Cached data from historical non-finalized states to improve speed when
@@ -67,6 +68,10 @@ type
       ## Stores the `LightClientUpdate` with the most `sync_committee_bits` per
       ## `SyncCommitteePeriod`. Sync committee finality gives precedence.
 
+    isSealed*: Table[SyncCommitteePeriod, bool]
+      ## Tracks the finalized sync committee periods for which complete
+      ## `bootstrap` and `best` data has been imported (from `dag.tail.slot`)
+
     pendingBest*:
       Table[(SyncCommitteePeriod, Eth2Digest), altair.LightClientUpdate]
       ## Same as `best`, but for `SyncCommitteePeriod` with not yet finalized
@@ -77,5 +82,37 @@ type
       ## Tracks light client data for the latest slot that was signed by
       ## at least `MIN_SYNC_COMMITTEE_PARTICIPANTS`. May be older than head.
 
-    importTailSlot*: Slot
+    tailSlot*: Slot
       ## The earliest slot for which light client data is imported.
+
+  LightClientDataCollector* = object
+    # -----------------------------------
+    # Light client data
+
+    cache*: LightClientCache
+      ## Data to enable light clients to stay in sync with the network
+
+    # -----------------------------------
+    # Config
+
+    serve*: bool
+      ## Whether to make local light client data available or not
+    importMode*: LightClientDataImportMode
+      ## Which classes of light client data to import
+    maxPeriods*: uint64
+      ## Maximum number of sync committee periods to retain light client data
+
+    # -----------------------------------
+    # Callbacks
+
+    onLightClientFinalityUpdate*: OnLightClientFinalityUpdateCallback
+      ## On new `LightClientFinalityUpdate` callback
+    onLightClientOptimisticUpdate*: OnLightClientOptimisticUpdateCallback
+      ## On new `LightClientOptimisticUpdate` callback
+
+    # -----------------------------------
+    # Historic data import
+    importFut*: Future[void]
+      ## Background task for importing historic light client data
+    importTaskAllowed*: LightClientTaskAllowedCallback
+      ## Callback to determine whether LC background task is allowed to run

@@ -182,6 +182,7 @@ proc loadChainDag(
       onLCOptimisticUpdateCb = onLightClientOptimisticUpdateCb,
       lightClientDataServe = config.lightClientDataServe.get,
       lightClientDataImportMode = config.lightClientDataImportMode.get,
+      lightClientDataMaxPeriods = config.lightClientDataMaxPeriods,
       vanityLogs = getPandas(detectTTY(config.logStdout)))
     databaseGenesisValidatorsRoot =
       getStateField(dag.headState, genesis_validators_root)
@@ -295,6 +296,12 @@ proc initFullNode(
       getFrontfillSlot, dag.backfill.slot, blockVerifier, maxHeadAge = 0)
 
   dag.setFinalizationCb makeOnFinalizationCb(node.eventBus, node.eth1Monitor)
+
+  proc importTaskAllowed(): bool =
+    # Suspend background task as important validator actions are approaching
+    node.actionTracker.getNextProposalSlot(node.currentSlot) == FAR_FUTURE_SLOT
+
+  dag.setLightClientImportTaskAllowedCb(importTaskAllowed)
 
   node.dag = dag
   node.quarantine = quarantine

@@ -535,7 +535,7 @@ p2pProtocol BeaconSync(version = 1,
                               isLightClientRequest = true).} =
     trace "Received LC bootstrap request", peer, blockRoot
     let dag = peer.networkState.dag
-    doAssert dag.lightClientDataServe
+    doAssert dag.lcDataCollector.serve
 
     peer.updateRequestQuota(lightClientBootstrapLookupCost)
     peer.awaitNonNegativeRequestQuota()
@@ -565,7 +565,7 @@ p2pProtocol BeaconSync(version = 1,
                               isLightClientRequest = true).} =
     trace "Received LC updates by range request", peer, startPeriod, reqCount
     let dag = peer.networkState.dag
-    doAssert dag.lightClientDataServe
+    doAssert dag.lcDataCollector.serve
 
     let
       headPeriod = dag.head.slot.sync_committee_period
@@ -605,7 +605,7 @@ p2pProtocol BeaconSync(version = 1,
                               isLightClientRequest = true).} =
     trace "Received LC finality update request", peer
     let dag = peer.networkState.dag
-    doAssert dag.lightClientDataServe
+    doAssert dag.lcDataCollector.serve
 
     peer.awaitNonNegativeRequestQuota()
 
@@ -632,7 +632,7 @@ p2pProtocol BeaconSync(version = 1,
                               isLightClientRequest = true).} =
     trace "Received LC optimistic update request", peer
     let dag = peer.networkState.dag
-    doAssert dag.lightClientDataServe
+    doAssert dag.lcDataCollector.serve
 
     peer.awaitNonNegativeRequestQuota()
 

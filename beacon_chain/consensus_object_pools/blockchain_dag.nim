@@ -50,7 +50,7 @@ const
   # When finality happens, we prune historical states from the database except
   # for a snapshort every 32 epochs from which replays can happen - there's a
   # balance here between making long replays and saving on disk space
-  EPOCHS_PER_STATE_SNAPSHOT = 32
+  EPOCHS_PER_STATE_SNAPSHOT* = 32
 
 proc putBlock*(
     dag: ChainDAGRef, signedBlock: ForkyTrustedSignedBeaconBlock) =
@@ -689,6 +689,7 @@ proc init*(T: type ChainDAGRef, cfg: RuntimeConfig, db: BeaconChainDB,
            onLCOptimisticUpdateCb: OnLightClientOptimisticUpdateCallback = nil,
            lightClientDataServe = false,
            lightClientDataImportMode = LightClientDataImportMode.None,
+           lightClientDataMaxPeriods = none(uint64),
            vanityLogs = default(VanityLogs)): ChainDAGRef =
   cfg.checkForkConsistency()
 
@@ -725,15 +726,18 @@ proc init*(T: type ChainDAGRef, cfg: RuntimeConfig, db: BeaconChainDB,
 
       vanityLogs: vanityLogs,
 
-      lightClientDataServe: lightClientDataServe,
-      lightClientDataImportMode: lightClientDataImportMode,
+      lcDataCollector: initLightClientDataCollector(
+        serve = lightClientDataServe,
+        importMode = lightClientDataImportMode,
+        maxPeriods =
+          lightClientDataMaxPeriods.get(cfg.defaultLightClientDataMaxPeriods),
+        onLCFinalityUpdateCb = onLCFinalityUpdateCb,
+        onLCOptimisticUpdateCb = onLCOptimisticUpdateCb),
 
       onBlockAdded: onBlockCb,
       onHeadChanged: onHeadCb,
       onReorgHappened: onReorgCb,
-      onFinHappened: onFinCb,
-      onLightClientFinalityUpdate: onLCFinalityUpdateCb,
-      onLightClientOptimisticUpdate: onLCOptimisticUpdateCb
+      onFinHappened: onFinCb
     )
     loadTick = Moment.now()
 
@@ -954,7 +958,7 @@ proc init*(T: type ChainDAGRef, cfg: RuntimeConfig, db: BeaconChainDB,
     frontfillDur = frontfillTick - finalizedTick,
     keysDur = Moment.now() - frontfillTick
 
-  dag.initLightClientCache()
+  dag.initLightClientData()
 
   dag
 
